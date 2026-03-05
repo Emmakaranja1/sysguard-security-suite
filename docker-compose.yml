@@ -1,0 +1,63 @@
+
+services:
+ 
+  sysguard:
+    build: .
+    container_name: sysguard
+    ports:
+      - "9000:9000"  
+    volumes:
+      - sysguard-logs:/app/logs
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    networks:
+      - sysguard-net
+   
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: sysguard-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+    networks:
+      - sysguard-net
+    depends_on:
+      - sysguard
+
+ 
+  grafana:
+    image: grafana/grafana:10.2.2
+    container_name: sysguard-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost:3000
+      - GF_PATHS_PROVISIONING=/etc/grafana/provisioning
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    restart: unless-stopped
+    networks:
+      - sysguard-net
+    depends_on:
+      - prometheus
+
+volumes:
+  sysguard-logs:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  sysguard-net:
+    driver: bridge
