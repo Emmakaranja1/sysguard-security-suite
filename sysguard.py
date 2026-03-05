@@ -17,6 +17,11 @@ try:
 except ImportError:
     Counter = Gauge = Histogram = start_http_server = None
 
+try:
+    import psutil
+except ImportError:
+    psutil = None
+
 
 SERVICE_PORTS = {
     22: "ssh",
@@ -49,6 +54,17 @@ class ScanResult:
     timestamp: str
     scan_success: bool
     error_message: Optional[str] = None
+
+
+@dataclass
+class VulnerabilitySimulation:
+    """Simulated vulnerability check result for demo/learning purposes."""
+
+    service: str
+    check_type: str
+    severity: str  # low, medium, high
+    detected: bool
+    description: str
 
 
 def _init_metrics():
@@ -229,3 +245,152 @@ class PortScanner:
                 ).set(count)
 
         return result
+
+
+def simulate_vulnerability_checks(
+    open_ports: list[int], seed: Optional[int] = None
+) -> list[VulnerabilitySimulation]:
+    """
+    Simulate vulnerability check results using random for demo purposes.
+    In production, integrate with tools like OpenVAS, Trivy, or custom checks.
+    """
+    import random
+    
+    if seed is not None:
+        random.seed(seed)
+
+    results: list[VulnerabilitySimulation] = []
+    checks = [
+        ("weak_auth", "Authentication misconfiguration", ["low", "medium", "high"]),
+        ("default_creds", "Default credentials possible", ["medium", "high"]),
+        ("missing_tls", "TLS not enforced", ["high"]),
+        ("debug_mode", "Debug mode enabled", ["low", "medium"]),
+        ("info_disclosure", "Information disclosure", ["low", "medium"]),
+    ]
+
+    for port in open_ports:
+        service = SERVICE_PORTS.get(port, f"port-{port}")
+        # Simulate: ~20% chance of "finding" a simulated issue
+        for check_type, desc, severities in checks:
+            detected = random.random() < 0.2
+            severity = random.choice(severities)
+            results.append(
+                VulnerabilitySimulation(
+                    service=service,
+                    check_type=check_type,
+                    severity=severity,
+                    detected=detected,
+                    description=desc,
+                )
+            )
+            if METRICS and detected:
+                METRICS["vulnerability_simulations"].labels(
+                    service=service, check_type=check_type, severity=severity
+                ).set(1)
+
+    return results
+
+
+def collect_system_health() -> dict:
+    """Collect CPU and memory metrics for observability dashboard."""
+    if psutil is None:
+        return {"cpu_percent": 0, "memory_percent": 0}
+
+    cpu = psutil.cpu_percent(interval=0.5)
+    mem = psutil.virtual_memory().percent
+
+    if METRICS:
+        METRICS["cpu_percent"].set(cpu)
+        METRICS["memory_percent"].set(mem)
+
+    return {"cpu_percent": cpu, "memory_percent": mem}
+
+
+def simulate_alert(
+    level: str, message: str, channel: str = "slack"
+) -> None:
+    """
+    Simulate alert to Slack/Discord. In production, use webhooks or SDK.
+    For demo: prints formatted message.
+    """
+    alert_payload = {
+        "channel": channel,
+        "level": level,
+        "message": message,
+        "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+    }
+    # Simulated - just log/print
+    msg = f"[ALERT {level.upper()}] {channel}: {message}"
+    logger.warning("Simulated alert: %s", msg)
+    print(f"\n--- Simulated {channel.upper()} Alert ---")
+    print(json.dumps(alert_payload, indent=2))
+    print("--- End Alert ---\n")
+
+
+def run_scan(
+    targets: Optional[list[str]] = None,
+    include_docker: bool = True,
+    run_vuln_sim: bool = True,
+    run_system_health: bool = True,
+) -> list[ScanResult]:
+    """
+    Run full scan: localhost + optional Docker subnet.
+    Returns list of ScanResult for each target.
+    """
+    if targets is None:
+        targets = [LOCALHOST]
+        if include_docker:
+            # Scan Docker gateway - represents host from container perspective
+            targets.append("172.17.0.1")
+
+    scanner = PortScanner()
+    results: list[ScanResult] = []
+
+    for target in targets:
+        logger.info("Scanning target: %s", target)
+        res = scanner.scan_target(target)
+        results.append(res)
+
+        # Log structured result for sysguard.log
+        log_entry = {
+            "event": "scan_complete",
+            "target": res.target,
+            "open_ports": res.open_ports,
+            "open_ports_per_service": res.open_ports_per_service,
+            "high_risk_ports": res.high_risk_ports,
+            "duration_seconds": round(res.duration_seconds, 3),
+            "timestamp": res.timestamp,
+            "success": res.scan_success,
+        }
+        logger.info("Scan result: %s", json.dumps(log_entry))
+
+        if res.high_risk_ports and len(res.high_risk_ports) > 0:
+            simulate_alert(
+                "warning",
+                f"High-risk ports detected on {res.target}: {res.high_risk_ports}",
+                "slack",
+            )
+
+        if run_vuln_sim and res.open_ports:
+            vulns = simulate_vulnerability_checks(res.open_ports)
+            detected = [v for v in vulns if v.detected]
+            if detected:
+                for v in detected:
+                    logger.info(
+                        "Simulated vuln: %s | %s | %s | %s",
+                        v.service,
+                        v.check_type,
+                        v.severity,
+                        v.description,
+                    )
+                simulate_alert(
+                    "info",
+                    f"Simulated vuln checks: {len(detected)} items on {res.target}",
+                    "discord",
+                )
+
+    if run_system_health:
+        health = collect_system_health()
+        logger.info("System health: %s", json.dumps(health))
+
+    return results
