@@ -1,3 +1,17 @@
+#!/usr/bin/env python3
+"""
+SysGuard - Security Automation Tool for Data Centre Operations
+
+A lightweight security monitoring and vulnerability scanning tool designed for
+localhost and internal Docker network environments. Safe, ethical scanning only.
+
+Intern-ready: Demonstrates Python automation, Prometheus metrics, structured
+logging, and containerization best practices.
+
+Author: SysGuard Team
+License: MIT
+"""
+
 import json
 import logging
 import os
@@ -394,3 +408,80 @@ def run_scan(
         logger.info("System health: %s", json.dumps(health))
 
     return results
+
+
+def main():
+    """Main entry: start Prometheus HTTP server, run scan, keep server alive."""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="SysGuard Security Scanner")
+    parser.add_argument(
+        "--no-metrics",
+        action="store_true",
+        help="Disable Prometheus HTTP server",
+    )
+    parser.add_argument(
+        "--metrics-port",
+        type=int,
+        default=9000,
+        help="Port for Prometheus metrics (default: 9000)",
+    )
+    parser.add_argument(
+        "--targets",
+        nargs="+",
+        default=None,
+        help="Override scan targets (e.g., 127.0.0.1 172.17.0.1)",
+    )
+    parser.add_argument(
+        "--no-docker",
+        action="store_true",
+        help="Skip Docker subnet scan",
+    )
+    parser.add_argument(
+        "--once",
+        action="store_true",
+        help="Run single scan and exit (no continuous mode)",
+    )
+    args = parser.parse_args()
+
+    # Start Prometheus HTTP server for metrics scraping
+    if not args.no_metrics and start_http_server:
+        try:
+            start_http_server(args.metrics_port)
+            logger.info("Prometheus metrics server listening on port %d", args.metrics_port)
+        except OSError as e:
+            logger.warning("Could not start metrics server: %s", e)
+
+    targets = args.targets
+    if targets is None:
+        targets = [LOCALHOST]
+        if not args.no_docker:
+            # In container, use host.docker.internal or gateway
+            targets.append("172.17.0.1")  # Docker gateway
+
+    run_scan(
+        targets=targets,
+        include_docker=not args.no_docker,
+        run_vuln_sim=True,
+        run_system_health=True,
+    )
+
+    if args.once:
+        logger.info("Single scan complete. Exiting.")
+        return
+
+    # Keep running for continuous metrics scraping
+    logger.info("SysGuard running. Metrics at :%d/metrics. Ctrl+C to stop.", args.metrics_port)
+    try:
+        while True:
+            import time
+            time.sleep(60)
+            # Periodic re-scan (optional enhancement)
+            run_scan(targets=targets, include_docker=not args.no_docker)
+    except KeyboardInterrupt:
+        logger.info("Shutdown requested. Goodbye.")
+        sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()
