@@ -1,17 +1,3 @@
-#!/usr/bin/env python3
-"""
-SysGuard - Security Automation Tool for Data Centre Operations
-
-A lightweight security monitoring and vulnerability scanning tool designed for
-localhost and internal Docker network environments. Safe, ethical scanning only.
-
-Intern-ready: Demonstrates Python automation, Prometheus metrics, structured
-logging, and containerization best practices.
-
-Author: SysGuard Team
-License: MIT
-"""
-
 import json
 import logging
 import os
