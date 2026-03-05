@@ -12,6 +12,11 @@ try:
 except ImportError:
     nmap = None
 
+try:
+    from prometheus_client import Counter, Gauge, Histogram, start_http_server
+except ImportError:
+    Counter = Gauge = Histogram = start_http_server = None
+
 
 SERVICE_PORTS = {
     22: "ssh",
@@ -44,6 +49,55 @@ class ScanResult:
     timestamp: str
     scan_success: bool
     error_message: Optional[str] = None
+
+
+def _init_metrics():
+    """Initialize Prometheus metrics if prometheus_client is available."""
+    if start_http_server is None:
+        return None
+
+    metrics = {
+        "open_ports_total": Gauge(
+            "sysguard_open_ports_total",
+            "Total number of open ports detected across all targets",
+            ["target"],
+        ),
+        "high_risk_ports": Gauge(
+            "sysguard_high_risk_ports",
+            "Number of high-risk ports detected (SSH, DB, etc.)",
+            ["target"],
+        ),
+        "scan_duration_seconds": Histogram(
+            "sysguard_scan_duration_seconds",
+            "Time taken to complete security scan in seconds",
+            ["target"],
+            buckets=[0.1, 0.5, 1.0, 2.0, 5.0, 10.0],
+        ),
+        "scans_total": Counter(
+            "sysguard_scans_total",
+            "Total number of scans executed",
+            ["target", "status"],
+        ),
+        "open_ports_per_service": Gauge(
+            "sysguard_open_ports_per_service",
+            "Open ports count per service type",
+            ["target", "service"],
+        ),
+        "vulnerability_simulations": Gauge(
+            "sysguard_vulnerability_simulations",
+            "Simulated vulnerability check results (1=detected, 0=clean)",
+            ["service", "check_type", "severity"],
+        ),
+        "cpu_percent": Gauge("sysguard_cpu_percent", "System CPU usage percentage"),
+        "memory_percent": Gauge(
+            "sysguard_memory_percent", "System memory usage percentage"
+        ),
+    }
+    return metrics
+
+
+# Global metrics object - populated after imports
+METRICS = _init_metrics()
 
 
 def setup_logging(log_file: str = LOG_FILE) -> logging.Logger:
@@ -161,5 +215,17 @@ class PortScanner:
             scan_success=success,
             error_message=err_msg,
         )
+
+        # Update Prometheus metrics
+        if METRICS:
+            METRICS["open_ports_total"].labels(target=target).set(len(open_ports))
+            METRICS["high_risk_ports"].labels(target=target).set(len(high_risk))
+            METRICS["scan_duration_seconds"].labels(target=target).observe(elapsed)
+            status = "success" if success else "failure"
+            METRICS["scans_total"].labels(target=target, status=status).inc()
+            for svc, count in open_ports_per_service.items():
+                METRICS["open_ports_per_service"].labels(
+                    target=target, service=svc
+                ).set(count)
 
         return result
