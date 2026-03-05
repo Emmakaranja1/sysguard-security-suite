@@ -45,7 +45,7 @@ flowchart LR
 
     scanner -.->|stdout + file| logs["logs/sysguard.log"]
 
-
+```
 <details>
 <summary>Text diagram (fallback)</summary>
 
@@ -56,7 +56,7 @@ flowchart LR
               └──► logs/sysguard.log
 
 </details>
-
+```
 
 
 ## Quick Start
@@ -117,8 +117,36 @@ chmod +x run_sysguard_scan.sh
 
 # Run scan inside Docker
 ./run_sysguard_scan.sh --docker
+
+
+```
+## Prometheus Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `sysguard_open_ports_total` | Gauge | Total open ports per target |
+| `sysguard_high_risk_ports` | Gauge | High-risk ports (SSH, DB, etc.) per target |
+| `sysguard_scan_duration_seconds` | Histogram | Scan duration in seconds |
+| `sysguard_scans_total` | Counter | Total scans (success/failure) |
+| `sysguard_open_ports_per_service` | Gauge | Open ports per service (ssh, http, etc.) |
+| `sysguard_vulnerability_simulations` | Gauge | Simulated vuln check results |
+| `sysguard_cpu_percent` | Gauge | System CPU usage |
+| `sysguard_memory_percent` | Gauge | System memory usage |
+
+### Example Metrics Output
+
+```
+# HELP sysguard_open_ports_total Total number of open ports detected across all targets
+# TYPE sysguard_open_ports_total gauge
+sysguard_open_ports_total{target="127.0.0.1"} 3.0
+sysguard_open_ports_total{target="172.17.0.1"} 2.0
+
+# HELP sysguard_scan_duration_seconds Time taken to complete security scan in seconds
+# TYPE sysguard_scan_duration_seconds histogram
+sysguard_scan_duration_seconds_bucket{target="127.0.0.1",le="1.0"} 1.0
 ```
 
+---
 
 
 
@@ -138,7 +166,7 @@ chmod +x run_sysguard_scan.sh
 
 ## Project Structure
 
-
+```
 SysGuard/
 ├── sysguard.py           # Main Python security tool
 ├── requirements.txt      # Python dependencies
@@ -153,11 +181,11 @@ SysGuard/
 ├── logs/
 │   └── sysguard.log      # Structured scan logs
 └── README.md
-
+```
 
 ## Command-Line Options
 
-
+```
 python sysguard.py [OPTIONS]
 
   --no-metrics     Disable Prometheus HTTP server
@@ -165,7 +193,7 @@ python sysguard.py [OPTIONS]
   --targets        Override scan targets (e.g., 127.0.0.1 172.17.0.1)
   --no-docker      Skip Docker subnet scan
   --once           Run single scan and exit
-
+```
 
 
 ## Safety & Ethics
